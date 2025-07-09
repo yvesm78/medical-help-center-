@@ -1,1 +1,3 @@
-streamlit\npandas\ngoogle-generativeai\n
+streamlit
+pandas
+google-generativeai
