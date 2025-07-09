@@ -3,14 +3,14 @@ import pandas as pd
 import docx
 import google.generativeai as genai
 
-# === GEMINI CONFIG ===
+# === CONFIGURE GEMINI ===
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
 
 # === PAGE CONFIG ===
-st.set_page_config(page_title="🩺 AI Medical Agent", layout="wide", page_icon="🧠")
+st.set_page_config(page_title="🩺 AI Medical Assistant", layout="wide", page_icon="🧠")
 
-# === HEADER ===
+# === UI STYLING ===
 st.markdown("""
     <style>
     .main-header {
@@ -28,12 +28,6 @@ st.markdown("""
     .stApp {
         background-color: #f5f7fa;
     }
-    .file-uploader {
-        border: 2px dashed #2A527A;
-        padding: 1rem;
-        border-radius: 10px;
-        background-color: #ffffff;
-    }
     .result-box {
         background-color: #e9fcef;
         padding: 1rem;
@@ -41,18 +35,31 @@ st.markdown("""
         border-left: 6px solid #2ECC71;
         font-size: 1.05em;
     }
+    .chat-box {
+        background-color: #ffffff;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<div class='main-header'>🧠 AI Medical Assistant</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-header'>Upload patient reports (.csv, .xlsx, .docx) to receive AI-powered medical analysis and recommendations.</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-header'>Upload patient reports, receive AI medical recommendations, and ask follow-up questions.</div>", unsafe_allow_html=True)
 
 # === FILE UPLOAD ===
 uploaded_file = st.file_uploader("📤 Upload patient file", type=["csv", "xlsx", "docx"])
 
-# === ANALYSIS BUTTON ===
+# === SESSION STATE SETUP ===
+if "analysis_context" not in st.session_state:
+    st.session_state.analysis_context = ""
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# === MAIN LOGIC ===
 if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
-    with st.spinner("Analyzing file... please wait"):
+    with st.spinner("Analyzing patient file..."):
         file_text = ""
 
         if uploaded_file.type == "text/csv":
@@ -67,15 +74,15 @@ if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
             doc = docx.Document(uploaded_file)
             file_text = "\n".join([p.text for p in doc.paragraphs])
 
-        # === PROMPT TO GEMINI ===
+        # Prompt to Gemini
         prompt = f"""
-        A doctor has uploaded a patient medical or lab report. Analyze it and respond with:
-        1. Health diagnosis or concerns
+        A doctor has uploaded a patient report. Analyze and summarize:
+        1. Likely health condition or diagnosis
         2. Suggested medications or treatments
-        3. Lifestyle or health advice
-        4. Referral recommendations (if needed)
+        3. Health advice or lifestyle recommendations
+        4. Referral suggestions (if needed)
 
-        Patient report:
+        Patient Report:
         ----------------------
         {file_text}
         """
@@ -83,10 +90,42 @@ if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
         try:
             response = model.generate_content(prompt)
             output = response.text.strip()
+            st.session_state.analysis_context = f"Patient Report:\n{file_text}\n\nInitial Analysis:\n{output}"
             st.markdown("### 🩺 AI Diagnosis & Recommendations")
             st.markdown(f"<div class='result-box'>{output}</div>", unsafe_allow_html=True)
         except Exception as e:
-            st.error("❌ Gemini failed to generate a response.")
+            st.error("❌ Failed to generate AI recommendations.")
+            st.exception(e)
+
+# === FOLLOW-UP CHAT INTERFACE ===
+if st.session_state.analysis_context:
+    st.markdown("---")
+    st.markdown("### 💬 Ask Questions About This Patient or Case")
+
+    # Show chat history
+    for chat in st.session_state.chat_history:
+        sender = "👨‍⚕️ You" if chat["role"] == "user" else "🤖 AI"
+        bubble = "chat-box"
+        st.markdown(f"<div class='{bubble}'><strong>{sender}:</strong><br>{chat['content']}</div>", unsafe_allow_html=True)
+
+    # New user input
+    user_question = st.chat_input("Ask a follow-up medical question...")
+
+    if user_question:
+        st.session_state.chat_history.append({"role": "user", "content": user_question})
+
+        full_prompt = (
+            f"{st.session_state.analysis_context}\n\n"
+            f"Doctor's follow-up question: {user_question}\n\n"
+            "Answer with medical insight and evidence-based guidance."
+        )
+
+        try:
+            reply = model.generate_content(full_prompt).text.strip()
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            st.rerun()
+        except Exception as e:
+            st.error("⚠️ AI failed to answer your question.")
             st.exception(e)
 
 # === FOOTER ===
