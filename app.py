@@ -1,120 +1,94 @@
 import streamlit as st
+import pandas as pd
+import docx
 import google.generativeai as genai
 
-# --- CONFIGURE GOOGLE GEMINI ---
+# === GEMINI CONFIG ===
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
 
-# --- DEFAULT CONTEXT (NO CSV FILE) ---
-context = """
-You are Kepler CampusBot. Your role is to assist users by answering questions about Kepler College.
-Provide helpful, accurate, and clear responses about the campus, academics, rules, and student life.
-"""
-
 # === PAGE CONFIG ===
-st.set_page_config(page_title="Kepler CampusBot", layout="wide")
+st.set_page_config(page_title="🩺 AI Medical Agent", layout="wide", page_icon="🧠")
 
-# === CUSTOM STYLING ===
+# === HEADER ===
 st.markdown("""
     <style>
-    .kepler-header {
-        color: #2A527A;
+    .main-header {
         text-align: center;
-        margin-top: -20px;
+        font-size: 2.5em;
+        color: #2A527A;
+        font-weight: bold;
     }
-    .chat-box {
-        border: 2px solid #0C2340;
-        border-radius: 12px;
+    .sub-header {
+        text-align: center;
+        font-size: 1.1em;
+        color: #555;
+        margin-bottom: 2rem;
+    }
+    .stApp {
+        background-color: #f5f7fa;
+    }
+    .file-uploader {
+        border: 2px dashed #2A527A;
         padding: 1rem;
-        background-color: white;
-        margin-bottom: 1rem;
+        border-radius: 10px;
+        background-color: #ffffff;
     }
-    .user-box {
-        border-left: 6px solid #0C2340;
-        background-color: #e8f1fb;
-    }
-    .bot-box {
-        border-left: 6px solid #2ECC71;
+    .result-box {
         background-color: #e9fcef;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 6px solid #2ECC71;
+        font-size: 1.05em;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# === SIDEBAR ===
-with st.sidebar:
-    st.image("kepler-logo.png", width=120)
-    st.header("Navigation")
-    if st.button("💬 Chatbot", use_container_width=True):
-        st.query_params['page'] = 'chat'
-        st.rerun()
-    if st.button("📊 Results Analyzer", use_container_width=True):
-        st.query_params['page'] = 'analysis'
-        st.rerun()
-    if st.button("ℹ About Me", use_container_width=True):
-        st.query_params['page'] = 'about'
-        st.rerun()
+st.markdown("<div class='main-header'>🧠 AI Medical Assistant</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-header'>Upload patient reports (.csv, .xlsx, .docx) to receive AI-powered medical analysis and recommendations.</div>", unsafe_allow_html=True)
 
-# === ROUTING ===
-current_page = st.query_params.get('page', 'chat')
+# === FILE UPLOAD ===
+uploaded_file = st.file_uploader("📤 Upload patient file", type=["csv", "xlsx", "docx"])
 
-# === CHATBOT PAGE ===
-if current_page == "chat":
-    st.image("kepler-logo.png", width=120)
-    st.markdown("<h2 class='kepler-header'>Welcome to Kepler CampusBot 🎓</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center;'>Ask about Kepler College rules, policies, or services.</p>", unsafe_allow_html=True)
+# === ANALYSIS BUTTON ===
+if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
+    with st.spinner("Analyzing file... please wait"):
+        file_text = ""
 
-    if "history" not in st.session_state:
-        st.session_state.history = []
+        if uploaded_file.type == "text/csv":
+            df = pd.read_csv(uploaded_file)
+            file_text = df.to_string(index=False)
 
-    for msg in st.session_state.history:
-        role = "🧑 You:" if msg["role"] == "user" else "🤖 CampusBot:"
-        css_class = "user-box" if msg["role"] == "user" else "bot-box"
-        st.markdown(f"<div class='chat-box {css_class}'><strong>{role}</strong><br>{msg['content']}</div>", unsafe_allow_html=True)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+            df = pd.read_excel(uploaded_file)
+            file_text = df.to_string(index=False)
 
-    user_input = st.chat_input("Type your question here...")
-    if user_input:
-        st.session_state.history.append({"role": "user", "content": user_input})
-        prompt = f"{context}\n\nUser: {user_input}"
-        response = model.generate_content(prompt)
-        answer = response.text.strip()
-        st.session_state.history.append({"role": "assistant", "content": answer})
-        st.rerun()
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(uploaded_file)
+            file_text = "\n".join([p.text for p in doc.paragraphs])
 
-# === ANALYSIS PAGE ===
-elif current_page == "analysis":
-    st.title("📊 Results Analyzer & Recommendations")
-    st.markdown("Enter your academic scores, lab results, or diagnosis details. I will analyze and give suggestions.")
+        # === PROMPT TO GEMINI ===
+        prompt = f"""
+        A doctor has uploaded a patient medical or lab report. Analyze it and respond with:
+        1. Health diagnosis or concerns
+        2. Suggested medications or treatments
+        3. Lifestyle or health advice
+        4. Referral recommendations (if needed)
 
-    user_results = st.text_area("Paste your exam scores or lab results here", height=200)
+        Patient report:
+        ----------------------
+        {file_text}
+        """
 
-    if st.button("Get Analysis and Recommendations"):
-        if not user_results.strip():
-            st.warning("Please enter some results for analysis.")
-        else:
-            with st.spinner("Analyzing..."):
-                analysis_prompt = f"""
-                You are an expert assistant. The following results were provided by a student or patient.
-                Analyze them and offer meaningful feedback, suggestions, or diagnosis insights.
+        try:
+            response = model.generate_content(prompt)
+            output = response.text.strip()
+            st.markdown("### 🩺 AI Diagnosis & Recommendations")
+            st.markdown(f"<div class='result-box'>{output}</div>", unsafe_allow_html=True)
+        except Exception as e:
+            st.error("❌ Gemini failed to generate a response.")
+            st.exception(e)
 
-                Results:
-                {user_results}
-                """
-                response = model.generate_content(analysis_prompt)
-                output = response.text.strip()
-                st.success("Analysis Completed:")
-                st.markdown(f"<div class='chat-box bot-box'><strong>🧠 Analysis:</strong><br>{output}</div>", unsafe_allow_html=True)
-
-# === ABOUT PAGE ===
-elif current_page == "about":
-    st.title("About Kepler College Chatbot")
-    st.markdown("""
-    I am CampusBot, an AI assistant designed to help you with a wide range of tasks and questions about Kepler College. 
-    My knowledge is based on official college resources, and my goal is to provide you with instant, accurate information.
-    """)
-    st.markdown("---")
-    st.markdown("""
-    ### Contact Us
-    - *Phone:* +250789773042
-    - *Website:* [keplercollege.ac.rw](https://keplercollege.ac.rw)
-    - *Admissions:* [admissions@keplercollege.ac.rw](mailto:admissions@keplercollege.ac.rw)
-    """)
+# === FOOTER ===
+st.markdown("---")
+st.markdown("Made with ❤️ for doctors | Powered by Google Gemini")
