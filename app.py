@@ -10,7 +10,7 @@ model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
 # === PAGE CONFIG ===
 st.set_page_config(page_title="🩺 AI Medical Assistant", layout="wide", page_icon="🧠")
 
-# === UI STYLING ===
+# === STYLING ===
 st.markdown("""
     <style>
     .main-header {
@@ -45,19 +45,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# === HEADER ===
 st.markdown("<div class='main-header'>🧠 AI Medical Assistant</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-header'>Upload patient reports, receive AI medical recommendations, and ask follow-up questions.</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-header'>Upload patient reports, receive AI medical recommendations, and ask follow-up questions below.</div>", unsafe_allow_html=True)
 
-# === FILE UPLOAD ===
-uploaded_file = st.file_uploader("📤 Upload patient file", type=["csv", "xlsx", "docx"])
-
-# === SESSION STATE SETUP ===
+# === SESSION STATE ===
 if "analysis_context" not in st.session_state:
     st.session_state.analysis_context = ""
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# === MAIN LOGIC ===
+# === FILE UPLOAD ===
+uploaded_file = st.file_uploader("📤 Upload patient file", type=["csv", "xlsx", "docx"])
+
+# === GET ANALYSIS BUTTON ===
 if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
     with st.spinner("Analyzing patient file..."):
         file_text = ""
@@ -74,12 +75,12 @@ if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
             doc = docx.Document(uploaded_file)
             file_text = "\n".join([p.text for p in doc.paragraphs])
 
-        # Prompt to Gemini
+        # === PROMPT TO GEMINI ===
         prompt = f"""
-        A doctor has uploaded a patient report. Analyze and summarize:
-        1. Likely health condition or diagnosis
-        2. Suggested medications or treatments
-        3. Health advice or lifestyle recommendations
+        A doctor has uploaded a patient medical report. Please analyze and summarize the following:
+        1. Possible diagnosis or health condition
+        2. Recommended medications or treatments
+        3. Lifestyle and practical health advice
         4. Referral suggestions (if needed)
 
         Patient Report:
@@ -97,31 +98,30 @@ if uploaded_file and st.button("🧾 Get Analysis and Recommendations"):
             st.error("❌ Failed to generate AI recommendations.")
             st.exception(e)
 
-# === FOLLOW-UP CHAT INTERFACE ===
+# === FOLLOW-UP CHAT SECTION ===
 if st.session_state.analysis_context:
     st.markdown("---")
-    st.markdown("### 💬 Ask Questions About This Patient or Case")
+    st.markdown("### 💬 Ask Follow-Up Questions About This Patient or Report")
 
     # Show chat history
     for chat in st.session_state.chat_history:
         sender = "👨‍⚕️ You" if chat["role"] == "user" else "🤖 AI"
-        bubble = "chat-box"
-        st.markdown(f"<div class='{bubble}'><strong>{sender}:</strong><br>{chat['content']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='chat-box'><strong>{sender}:</strong><br>{chat['content']}</div>", unsafe_allow_html=True)
 
-    # New user input
-    user_question = st.chat_input("Ask a follow-up medical question...")
+    # Chat input
+    user_question = st.chat_input("Ask a follow-up question...")
 
     if user_question:
         st.session_state.chat_history.append({"role": "user", "content": user_question})
 
-        full_prompt = (
+        followup_prompt = (
             f"{st.session_state.analysis_context}\n\n"
             f"Doctor's follow-up question: {user_question}\n\n"
-            "Answer with medical insight and evidence-based guidance."
+            "Answer as a helpful medical assistant."
         )
 
         try:
-            reply = model.generate_content(full_prompt).text.strip()
+            reply = model.generate_content(followup_prompt).text.strip()
             st.session_state.chat_history.append({"role": "assistant", "content": reply})
             st.rerun()
         except Exception as e:
